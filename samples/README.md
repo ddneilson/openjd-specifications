@@ -28,6 +28,7 @@ Please see the [CONTRIBUTING guide](../CONTRIBUTING.md) for additional informati
 | [blender-ffmpeg](./v2023-09/job_templates/blender-ffmpeg.yaml) | step dependencies, embedded files, job parameters, ui metadata |
 | [ffmpeg](./v2023-09/job_templates/ffmpeg.yaml) | command arguments, debugging environment, step dependencies, job parameters, ui metadata |
 | [host-requirements](./v2023-09/job_templates/host-requirements.yaml) | host requirements |
+| [path-mapping](./v2023-09/job_templates/path-mapping.yaml) | path mapping |
 | [stdout-messages](./v2023-09/job_templates/stdout-messages.yaml) | stdout messages, embedded files |
 | [ui-controls-showcase](./v2023-09/job_templates/ui-controls-showcase.yaml) | job parameters, ui metadata, embedded file |
 

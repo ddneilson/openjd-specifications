@@ -1,0 +1,43 @@
+# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#
+# ----
+# Demonstrates
+# ----
+# This demonstrates a simple job template that can be used to inspect the path mapping
+# rules that are available to your jobs.
+#
+# To run:
+#  PATH_MAPPING_RULES="{\"version\":\"pathmapping-1.0\", \"path_mapping_rules\": [{\"source_path_format\": \"POSIX\", \"source_path\": \"/mnt/source_directory\", \"destination_path\": \"/mnt/destination_directory\"}]}"
+#  openjd run --step PrintRules path-mapping.yaml --path-mapping-rules "$PATH_MAPPING_RULES"
+#  openjd run --step PrintRules path-mapping.yaml
+#
+# ----
+# Requirements
+# ----
+# - bash compatible shell
+#
+# -----
+# Contributors to this template:
+#   Daniel Neilson (https://github.com/ddneilson)
+
+name: ViewPathMappingFile
+specificationVersion: jobtemplate-2023-09
+steps:
+- name: PrintRules
+  script:
+    actions:
+      onRun:
+        command: bash
+        args:
+        - "{{Task.File.Print}}"
+    embeddedFiles:
+    - name: Print
+      type: TEXT
+      data: |
+        #!/bin/bash
+
+        if test "{{Session.HasPathMappingRules}}" = "true"; then
+          cat {{Session.PathMappingRulesFile}}
+        else
+          echo "No path mapping rules defined for this Session"
+        fi
