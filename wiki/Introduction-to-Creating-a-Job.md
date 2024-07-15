@@ -338,7 +338,7 @@ Then if the Step's inputs define the Task parameter "Person" to be the values `[
 [adding task parallelism](#224-adding-task-parallelism). If there are no inputs defined in a Step, then the command
 is run once as given.
 
-Aside: If you are familiar with the concept, then this is a [map operation](https://en.wikipedia.org/wiki/Map_(higher-order_function)).
+Aside: This is a [map operation](https://en.wikipedia.org/wiki/Map_(higher-order_function)).
 
 You've created two shell scripts and can manually run them in sequence to approximate the results that we want. We can use
 Open Job Description's concept of [Embedded Files](2023-09-Template-Schemas#6-embeddedfile) to put those scripts directly into
@@ -841,7 +841,7 @@ rather than STRING types for parameters that are files and directories. The PATH
 rules applied to them when resolving the value in a template.
 
 For the example, you ultimately want the job to use the files in the current directory when running. To demonstrate path mapping,
-let's retend that you're submitting from a different workstation where the files are located in the `/mnt/shared/demo` directory. 
+let's pretend that you're submitting from a different workstation where the files are located in the `/mnt/shared/demo` directory. 
 You'll run the job with parameter values that say that the files are located in `/mnt/shared/demo` and create a path mapping rule that
 tells Open Job Description to remap `/mnt/shared/demo` to the current working directory.
 
@@ -886,9 +886,10 @@ Fri Jul  5 17:09:48 2024	Read blend: "/Users/myusername/blender_demo/3d/pavillon
 ```
 
 This works because the `pavillon_barcelone_v1.2.blend` file references the files that it needs (the textures beside it in the directory)
-with relative path references. If your job's files contain absolute file references, then Open Job Description makes the path mapping rules
-that are being applied available to a Job in the Session's temporary working directory while it's running for your job to use.
-To see these, you can run the [`path-mapping.yaml` sample Job Template](https://github.com/OpenJobDescription/openjd-specifications/tree/mainline/samples):
+with relative path references. If your job's files contain absolute file references, then your job will need to remap those references
+in some way when running in a different filesystem configuration. Open Job Description makes the path mapping rules that are being applied
+available in the Session's temporary working directory while your job is running. To see these, you can run the
+[`path-mapping.yaml` sample Job Template](https://github.com/OpenJobDescription/openjd-specifications/tree/mainline/samples):
 
 ```bash
 % PATH_MAPPING_RULES=\
@@ -1229,7 +1230,8 @@ Aside: The value for the `range` property are using
 [Open Job Description's syntax](https://github.com/OpenJobDescription/openjd-specifications/wiki/2023-09-Template-Schemas#34111-intrangeexpr)
 for integer range expressions. The value "1-380:11" means to take every 11th value starting at 1 and going no higher than 380; so, the values
 `1, 12, 23, ..., 374`. The value value "11-380:11,380" is similar, but adds the value 380 to the end of the list of value to end up with
-`11, 22, 33, ..., 373, 380`. 
+`11, 22, 33, ..., 373, 380`. The end result of these definitions and the combination expression is that each task will run on a frame
+range that looks like `1-11`, `12-22`, etc.
 
 Then introduce a new Job Parameter for the number of frames per Task and one less than `FrameEnd`, to work around a current limitation of
 the implementation. Also, convert the parameter space definition to use the template's Job Parameters, and modify the arguments of
@@ -1701,8 +1703,8 @@ Mon Jul  8 14:23:44 2024	RangeEnd(INT) = 11
 
 The definition of each Step in a Job Template can include a
 [`hostRequirements` property](https://github.com/OpenJobDescription/openjd-specifications/wiki/2023-09-Template-Schemas#33-hostrequirements)
-that constrains your compute orchestrator to only run the Step's Tasks on certain hardware. For instance, you can say that the Tasks must
-run on a Linux host, requires at least 16 GiB of memory, and requires at least 8 CPU cores.
+that, if supported by your compute orchestrator, will constrain the Step's Tasks to only run on certain hardware. For instance, you can say that
+the Tasks must run on a Linux host, requires at least 16 GiB of memory, and requires at least 8 CPU cores.
 
 Add host requirements to the `BlenderRender` Step to constrain which hosts in your compute cluster can run its Tasks:
 
