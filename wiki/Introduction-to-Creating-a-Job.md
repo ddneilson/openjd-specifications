@@ -5,7 +5,7 @@ as we walk through creating a Job that renders an animation with Blender and the
 We'll also introduce you to some of the tooling that is available to help you rapidly develop a Job locally on your workstation.
 
 If you have not already read through [How Jobs Are Constructed](How-Jobs-Are-Constructed) and [How Jobs Are Run](How-Jobs-Are-Run)
-then we recommend starting with those first and then coming back once complete. Those pages provide context that will help you
+then we recommend starting with those first. Those pages provide context that will help you
 understand the remainder of this guide.
 
 Table of Contents:
@@ -30,11 +30,7 @@ installed. This CLI provides easy to use subcommands for validating the syntax o
 Template locally on your workstation, and more. The CLI is written in Python, so you will need to have Python 3.9 or higher
 available on your workstation; for information on how to install Python, please see the official [Python.org website](https://www.python.org/).
 
-First, we suggest creating a [Python virtual environment](https://docs.python.org/3/library/venv.html) and installing the CLI into that:
-
-| POSIX | Windows (CMD Shell) |
-| ----- | ------- | 
-| <pre>python3 -m venv .venv<br>source .venv/bin/activate<br>pip install openjd-cli</pre> | <pre>python3 -m venv .venv<br>.venv\Scripts\activate.bat<br>pip install openjd-cli</pre> | 
+We suggest installing the tooling into a [Python virtual environment](https://docs.python.org/3/library/venv.html).
 
 For writing Job Templates by hand we also recommend using [Visual Studio Code](https://code.visualstudio.com/)
 and configuring it so that it can auto-complete the syntax of your Job Templates. To configure auto-complete, you
@@ -87,29 +83,28 @@ and then encodes those rendered frames into an mp4 video using [FFmpeg](https://
 an approach to developing a Job that aims to keep your inner development loop fast by leveraging
 the Open Job Description CLI to test the Job on your workstation. We also demonstrates making small incremental changes to make
 it easier to narrow in on the root cause of an error. This process has faster iterations than submitting the Job
-to your distributed compute cluster, can be done in a cafe or airplane without an internet connection, and does not even require
+to your distributed compute cluster (AKA render farm), can be done in a cafe or airplane without an internet connection, and does not even require
 that you have a compute cluster that supports Open Job Description.
 
 ### 2.1. Starting with shell scripts
 
-An Open Job Description Job is, essentially, describing a set of command-line commands to run, the inputs to those commands,
+An Open Job Description Job is, essentially, describing a set of command-line instructions to run, the inputs to those commands,
 and the order in which they need to be run. We encourage you to think of authoring a Job as writing a series of shell
 scripts that accomplish the objective of the Job when they are run in the correct order with the correct inputs.
 
-In this guide, you are creating a Job that generates frames of an animation using Blender and then encodes the frames into an animation
+In this guide, you are creating a Job that generates a sequence of frames of a Blender animation and then encodes the frames into a movie file
 using FFmpeg. You'll break this Job down into two steps:
 
-1. Generate the animation frames with Blender; and then
-2. Encode the generated frames into an mp4 video with FFmpeg.
+1. Generate the animation frames with Blender's command-line interface; and then
+2. Encode the generated frames into an mp4 video file with FFmpeg.
 
 Note that this walkthrough is written for a bash-compatible shell such as those available on typical Linux or
-MacOS workstations. If you are using Windows, then we trust that the modifications to powershell or batch from bash
-will be straightforward enough for you to handle; though you may also run bash scripts on Windows if you install
+MacOS workstations. If you are using Windows, you will need to modify the commands for PowerShell or batch; though you may also run bash scripts on Windows if you install
 an application such as [Git BASH](https://gitforwindows.org/).
 
 #### 2.1.1. Creating a shell script to render with Blender
 
-First, you'll create a shell script that runs Blender to render a part of the animation.
+First, you'll create a shell script that calls the Blender command-line interface to render a part of the animation.
 Looking up the [documentation for the Blender command line](https://docs.blender.org/manual/en/latest/advanced/command_line/arguments.html)
 we created the following as a starting point for our Blender script:
 
@@ -120,7 +115,7 @@ we created the following as a starting point for our Blender script:
 set -eou pipefail
 
 # Use Blender's scripting interface to reduce the scene resolution and sampling rate to speed up testing.
-# Remove this after testing is complete.
+# Remove this and the lines below, `  --python "$TMPFILE" \` and `rm -f $TMPFILE`, after testing is complete.
 TMPFILE=$(mktemp)
 cat > "$TMPFILE" << EOF
 import bpy
@@ -143,7 +138,7 @@ rm -f $TMPFILE
 
 This script makes some assumptions, such as being run from a directory that contains our input and output, that we'll modify next, but
 this is a good start. It uses Blender to render two frames of the 380 frame animation created by
-the ["Barcelona Pavillion" demo scene](https://www.blender.org/download/demo-files/#cycles) (accessed July 2024) at reduced resolution.
+the ["Barcelona Pavillion" demo scene](https://www.blender.org/download/demo-files/#cycles) by eMirage, distributed under CC-BY (accessed July 2024).
 Save this to a file called `render.sh`, set its execute bit (`chmod +x render.sh`), and then test it to verify that it runs as expected:
 
 ```bash
@@ -362,7 +357,7 @@ steps:
             rm -f $TMPFILE
 ```
 
-Note that if you are writing your Job for Windows with the render script being a batch or powershell script, then you will
+Note that if you are writing your Job for Windows with the render script being a batch or PowerShell script, then you will
 need to make a couple of changes from the above:
 
 1. Change the `filename` in the embedded file to have the correct filename suffix (`.bat` for batch or `.ps1` for powershell); and
@@ -379,9 +374,7 @@ args:
   - "2"
 ```
 
-Next, following our incremental approach, test what you have so far locally on your workstation using the
-Open Job Description CLI (reminder: activate your Python virtual environment first, if you are using one). First,
-make sure that you do not have any syntax errors in our template using the CLI's `check` command:
+Before moving on, it's a good idea to check to the syntax of the file. Make sure to activate any Python virtual env as needed, then use the CLI's `check` command:
 
 ```bash
 % openjd check job.template.yaml
@@ -467,7 +460,9 @@ Before we continue adding functionality to your Job we're going to have you add 
 property of an action limits how long that action is allowed to run. When the time limit is reached then the
 command that's running will be canceled using the action's defined [cancelation method](2023-09-Template-Schemas#53-cancelationmethod)
 (by default, all processes in the Task's process tree are stopped). The timeout is a guard-rail to help prevent misbehaving actions
-from running forever; which will incur a monetary cost if your compute is, say, running on a cloud provider. Add a short timeout,
+from running forever; which can incur direct costs depending on your infrastructure (such as a cloud provider).
+
+To test the timeout functionality works as expected, add a too short timeout,
 test that it works using the CLI, and then modify the timeout value to something large enough to complete the Task:
 
 ```yaml
@@ -497,7 +492,11 @@ Fri Jul  5 09:59:30 2024	Canceling subprocess 88373 via termination method at 20
 ...
 ```
 
-Finally, to complete this part of the guide add a Step that encodes the video to your Job. This will follow the same
+As expected, a timeout of 2 seconds is too short to allow the Blender render to complete, and the Job is cancelled. 
+
+Make sure to modify the timeout to a larger value before going forward.
+
+To complete this part of the guide, add a Step that encodes the video to your Job. This will follow the same
 process that we've followed thus far, so we'll spare you the step-by-step instructions and jump straight to the completed template:
 
 ```yaml
@@ -584,15 +583,15 @@ steps:
 
 Notice that the EncodeVideo Step differs from the BlenderRender Step in that it includes the definition of the Step's
 [dependencies](2023-09-Template-Schemas#32-stepdependency). This ensures that when you submit the Job to a compute cluster
-to run that the `BlenderRender` Step will run successfully to completion before the `EncodeVideo` Step is run.
+to run that the `BlenderRender` Step will run successfully to completion before the `EncodeVideo` Step is started. 
 
-As a final note, if your shell scripts in your actual Jobs are large then you may prefer to host them on a shared network fileshare
+If your shell scripts in your actual Jobs are large then you may prefer to host them on a shared network fileshare
 instead of embedding them directly within a Job Template. If you do so, then to avoid a potential command-injection attack on your
 Jobs we remind you to ensure that no unauthorized users (including any running Job on the cluster) can possibly overwrite your scripts. 
 
 ### 2.2.2. Parameterizing the template
 
-At this point you have a Job Template that has a specific scene file and frame range hard-coded into it. You can make this more
+At this point you have a Job Template that has hard-coded values for the scene file and frame range. You can make this more
 general by adding [Job Parameters](2023-09-Template-Schemas#2-jobparameterdefinition) to the template to allow changing things
 like the scene file, frame range, and output locations when using the template to create a job.
 
@@ -692,7 +691,7 @@ Repeating the same for the other values that we want to parameterize:
 2. The starting and ending frame number for the animation are both [`INT` type job parameters](2023-09-Template-Schemas#23-jobintparameterdefinition); and
 3. The name of the job can be a [`STRING` type job parameter](2023-09-Template-Schemas#21-jobstringparameterdefinition).
 
-Pause here and try to update those yourself before continuing. The result will end up looking equivalent to:
+The result will end up looking equivalent to:
 
 ```yaml
 specificationVersion: jobtemplate-2023-09
@@ -1253,7 +1252,7 @@ Mon Jul  8 12:23:56 2024	RangeEnd(INT) = 11
 ...
 ```
 
-The complete Job Template is:
+The Job Template is now:
 
 ```yaml
 specificationVersion: jobtemplate-2023-09
@@ -1568,7 +1567,9 @@ or you need to modify the template so that it has both a testing and production 
 using [Environments](2023-09-Template-Schemas#4-environment) in a Job Template. Think of Environments as encapsulating commands that you
 can run [before any Task has run, and after all Tasks have completed](How-Jobs-Are-Run#sessions) (whether successfully or not).
 Since they're just arbitrary commands of your choosing they can do anything that you would like, but one of their use cases is to
-set up or modify the environment where your Tasks will be running. For this case, modify the `render.sh` embedded file
+set up or modify the environment where your Tasks will be running.
+
+For this case, modify the `render.sh` embedded file
 so that the testing code is only run if the environment variable `TESTING_TEMPLATE` has the value `true`:
 
 ```bash
