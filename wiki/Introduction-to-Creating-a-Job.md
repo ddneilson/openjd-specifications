@@ -1,9 +1,15 @@
 # Introduction to Creating a Job
 
-This page guides you through developing a Job using Open Job Description. Going through this guide will introduce you to the 
-[Open Job Description CLI](https://pypi.org/project/openjd-cli/) to develop and test jobs without needing to submit them
-to a compute cluster, and how to configure the [Visual Studio Code](https://code.visualstudio.com/) editor to help you write
-Open Job Description templates.
+This page guides you through developing a Job using Open Job Description to define the work you want
+to run. A Job in Open Job Description is the work that is run on a distributed cluster of computers.
+Jobs are a set of commands that are run on compute hosts subject to ordering, parallelism, and other
+hardware and scheduling constraints (read more at [How Jobs Are Constructed](How-Jobs-Are-Constructed)
+if you haven't already). Open Job Description defines Jobs via a Job Template. Creating a Job is an
+exercise in creating a Job Template that describes the runtime environment, and the processes that will run.
+
+This guide walks you through using the [Open Job Description CLI](https://pypi.org/project/openjd-cli/)
+to develop and test jobs without needing to submit them to a compute cluster, and how to configure the
+[Visual Studio Code](https://code.visualstudio.com/) editor to help you write Open Job Description templates.
 You will also go through a gradual introduction to constructing Job Templates to define your Jobs that shows
 you how to:
 
