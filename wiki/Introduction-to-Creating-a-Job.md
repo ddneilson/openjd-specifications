@@ -1,8 +1,20 @@
 # Introduction to Creating a Job
 
-This page guides you through developing a Job using Open Job Description. We'll explain elements of the Job Template bit by bit
-as we walk through creating a Job that renders an animation with Blender and then encodes those frames into a video for viewing.
-We'll also introduce you to some of the tooling that is available to help you rapidly develop a Job locally on your workstation.
+This page guides you through developing a Job using Open Job Description. Going through this guide will introduce you to the 
+[Open Job Description CLI](https://pypi.org/project/openjd-cli/) to develop and test jobs without needing to submit them
+to a compute cluster, and how to configure the [Visual Studio Code](https://code.visualstudio.com/) editor to help you write
+Open Job Description templates.
+You will also go through a gradual introduction to constructing Job Templates to define your Jobs that shows
+you how to:
+
+1. Embed scripts into your Job definition;
+2. Parameterize a Job Template with Job Parameters;
+3. Make use of path mapping rules available to your job;
+4. Parallelize your workload by defining the parameter space for the Steps in your Job, including
+   how to make use of range expressions, and how to chunk your workload to increase the amount of
+   work done in each Task in your Job; and
+5. How to define host requirements in the Steps of your Job to constrain which hosts are allowed to run
+   the workload.
 
 If you have not already read through [How Jobs Are Constructed](How-Jobs-Are-Constructed) and [How Jobs Are Run](How-Jobs-Are-Run)
 then we recommend starting with those first. Those pages provide context that will help you
@@ -21,14 +33,19 @@ Table of Contents:
         3. [Path Mapping](#223-path-mapping)
         4. [Adding Task Parallelism](#224-adding-task-parallelism)
     3. [Ready for Production](#23-ready-for-production)
+        1. [Condition testing using environments](#231-conditional-testing-using-environments)
+        2. [Adding host requirements](#232-adding-host-requirements)
+        3. [The final result](#233-the-final-result)
 3. [Next Steps](#3-next-steps)
 
 ## 1. Toolchain Setup
 
-To replicate the steps taken in this guide you will need to have the [Open Job Description CLI](https://pypi.org/project/openjd-cli/)
-installed. This CLI provides easy to use subcommands for validating the syntax of a Job Template, running Tasks defined by a Job
-Template locally on your workstation, and more. The CLI is written in Python, so you will need to have Python 3.9 or higher
-available on your workstation; for information on how to install Python, please see the official [Python.org website](https://www.python.org/).
+To replicate the steps taken in this guide you will need to have the [Open Job Description CLI](https://pypi.org/project/openjd-cli/),
+[Python](https://www.python.org/), [Blender](https://www.blender.org/), and [FFmpeg](https://www.ffmpeg.org/) installed.
+Open Job Description's CLI provides easy to use subcommands for validating the syntax of a Job Template,
+running Tasks defined by a Job Template locally on your workstation, and more. The CLI is written in Python, so you will need to have
+Python 3.9 or higher available on your workstation; for information on how to install Python, please see the official
+[Python.org website](https://www.python.org/).
 
 We suggest installing the tooling into a [Python virtual environment](https://docs.python.org/3/library/venv.html).
 
@@ -83,8 +100,8 @@ and then encodes those rendered frames into an mp4 video using [FFmpeg](https://
 an approach to developing a Job that aims to keep your inner development loop fast by leveraging
 the Open Job Description CLI to test the Job on your workstation. We also demonstrates making small incremental changes to make
 it easier to narrow in on the root cause of an error. This process has faster iterations than submitting the Job
-to your distributed compute cluster (AKA render farm), can be done in a cafe or airplane without an internet connection, and does not even require
-that you have a compute cluster that supports Open Job Description.
+to your distributed compute cluster (AKA render farm), can be done in a cafe or airplane without an internet connection, and does
+not even require that you have a compute cluster that supports Open Job Description.
 
 ### 2.1. Starting with shell scripts
 
@@ -92,15 +109,15 @@ An Open Job Description Job is, essentially, describing a set of command-line in
 and the order in which they need to be run. We encourage you to think of authoring a Job as writing a series of shell
 scripts that accomplish the objective of the Job when they are run in the correct order with the correct inputs.
 
-In this guide, you are creating a Job that generates a sequence of frames of a Blender animation and then encodes the frames into a movie file
-using FFmpeg. You'll break this Job down into two steps:
+In this guide, you are creating a Job that generates a sequence of frames of a Blender animation and then encodes the frames into
+a movie file using FFmpeg. You'll break this Job down into two steps:
 
 1. Generate the animation frames with Blender's command-line interface; and then
 2. Encode the generated frames into an mp4 video file with FFmpeg.
 
 Note that this walkthrough is written for a bash-compatible shell such as those available on typical Linux or
-MacOS workstations. If you are using Windows, you will need to modify the commands for PowerShell or batch; though you may also run bash scripts on Windows if you install
-an application such as [Git BASH](https://gitforwindows.org/).
+MacOS workstations. If you are using Windows, you will need to modify the commands for PowerShell or batch; though you may also
+run bash scripts on Windows if you install an application such as [Git BASH](https://gitforwindows.org/).
 
 #### 2.1.1. Creating a shell script to render with Blender
 
@@ -115,6 +132,7 @@ we created the following as a starting point for our Blender script:
 set -eou pipefail
 
 # Use Blender's scripting interface to reduce the scene resolution and sampling rate to speed up testing.
+# See https://www.gnu.org/savannah-checkouts/gnu/bash/manual/bash.html#Here-Documents
 # Remove this and the lines below, `  --python "$TMPFILE" \` and `rm -f $TMPFILE`, after testing is complete.
 TMPFILE=$(mktemp)
 cat > "$TMPFILE" << EOF
@@ -136,10 +154,11 @@ blender --background 3d/pavillon_barcelone_v1.2.blend \
 rm -f $TMPFILE
 ```
 
-This script makes some assumptions, such as being run from a directory that contains our input and output, that we'll modify next, but
-this is a good start. It uses Blender to render two frames of the 380 frame animation created by
-the ["Barcelona Pavillion" demo scene](https://www.blender.org/download/demo-files/#cycles) by eMirage, distributed under CC-BY (accessed July 2024).
-Save this to a file called `render.sh`, set its execute bit (`chmod +x render.sh`), and then test it to verify that it runs as expected:
+This script makes some assumptions, such as being run from a directory that contains our input and output, that we'll modify next,
+but this is a good start. It uses Blender to render two frames of the 380 frame animation created by
+the ["Barcelona Pavillion" demo scene](https://www.blender.org/download/demo-files/#cycles) by eMirage, distributed under CC-BY
+(accessed July 2024). Save this to a file called `render.sh`, set its execute bit (`chmod +x render.sh`), and then test it to verify
+that it runs as expected:
 
 ```bash
 % ./render.sh
@@ -153,8 +172,8 @@ Saved: 'output_frames/frame-002.png'
 Time: 00:07.71 (Saving: 00:00.07)
 ```
 
-Next, you'll want to be able to create a Job that can render any scene rather than just this one demo scene. So, parameterize the script
-such that the scene file, output directory, and frames to render can all be passed in as arguments to the script:
+Next, you'll want to be able to create a Job that can render any scene rather than just this one demo scene. So, parameterize the
+script such that the scene file, output directory, and frames to render can all be passed in as command-line arguments to the script:
 
 ```bash
 #!/bin/bash
@@ -162,6 +181,9 @@ such that the scene file, output directory, and frames to render can all be pass
 # Return an error code if any command in the script fails.
 set -eou pipefail
 
+# Use Blender's scripting interface to reduce the scene resolution and sampling rate to speed up testing.
+# See https://www.gnu.org/savannah-checkouts/gnu/bash/manual/bash.html#Here-Documents
+# Remove this and the lines below, `  --python "$TMPFILE" \` and `rm -f $TMPFILE`, after testing is complete.
 TMPFILE=$(mktemp)
 cat > "$TMPFILE" << EOF
 import bpy
@@ -171,6 +193,8 @@ for s in bpy.data.scenes:
 bpy.context.scene.cycles.samples = 100
 EOF
 
+# Note: $1, $2, etc are the arguments passed to the shell script in order.
+# See https://www.gnu.org/savannah-checkouts/gnu/bash/manual/bash.html#Positional-Parameters
 SCENE="$1"
 OUTDIR="$2"
 START_FRAME="$3"
@@ -198,7 +222,8 @@ Time: 00:08.17 (Saving: 00:00.07)
 
 #### 2.1.2. Creating a shell script to encode a video with FFmpeg
 
-To create the script for FFmpeg encoding consult the [Academy Software Foundation's encoding guidelines](https://academysoftwarefoundation.github.io/EncodingGuidelines/) on how to run FFmpeg:
+To create the script for FFmpeg encoding consult the [Academy Software Foundation's encoding guidelines](https://academysoftwarefoundation.github.io/EncodingGuidelines/)
+on how to run FFmpeg:
 
 ```bash
 #!/bin/bash
@@ -220,7 +245,7 @@ ffmpeg version 6.1.1-tessus  https://evermeet.cx/ffmpeg/  Copyright (c) 2000-202
 ...
 ```
 
-Then modify it so that it accepts script arguments:
+Then modify it so that it accepts arguments from the command line:
 
 ```bash
 #!/bin/bash
@@ -283,10 +308,7 @@ steps:
 ```
 
 The way to think about a Step in Open Job Description is that it is defining a command to run and the collection of inputs
-to run the command with. This is a [map operation](https://en.wikipedia.org/wiki/Map_(higher-order_function)), if
-you are familiar with that concept. You're not going to define any inputs for the command yet, so you'll be using the default
-of having a single Task with empty input. The command is defined in the `onRun` Action in the skeleton above; this is
-the command that is run when running a Task within a [Session](How-Jobs-Are-Run#sessions). An Action in the 2023-09 
+to run the command with. The command is defined in the `onRun` Action in the skeleton above. An Action in the 2023-09 
 revision of the specification [is defined as](2023-09-Template-Schemas#5-action):
 
 ```yaml
@@ -298,12 +320,24 @@ cancelation: <CancelationMethod> # @optional
 
 Notice that both the `command` and elements of the `args` array are annotated with `@fmtstring[host]` indicating that
 they are [Format Strings](How-Jobs-Are-Constructed#format-strings) that are evaluated on the host that the command will
-run on. We're going to make use of this property to create our Job.
+run on. We're going to make use of this property to create our Job. For example, if the `onRun` action were defined as:
 
-You've already expressed your Job as a series of two shell scripts to run in sequence, so next you'll make use of the
-[Embedded File](2023-09-Template-Schemas#6-embeddedfile) concept to make those scripts available to the Job. An embedded file
-lets you define the contents of a text file directly in a Job Template, then that text file will be created in the 
-[Session's temporary Working Directory](How-Jobs-Are-Run#sessions) when the Task is run.
+```yaml
+command: /bin/echo
+args: [ "Hello", "{{Task.Param.Person}}" ]
+```
+
+Then if the Step's inputs define the Task parameter "Person" to be the values `["Bob", "Sally"]` then the two commands
+`/bin/echo "Hello Bob"` and `/bin/echo "Hello Sally"` will be run. We'll see how to define the inputs when we get to
+[adding task parallelism](#224-adding-task-parallelism). If there are no inputs defined in a Step, then the command
+is run once as given.
+
+Aside: If you are familiar with the concept, then this is a [map operation](https://en.wikipedia.org/wiki/Map_(higher-order_function)).
+
+You've created two shell scripts and can manually run them in sequence to approximate the results that we want. We can use
+Open Job Description's concept of [Embedded Files](2023-09-Template-Schemas#6-embeddedfile) to put those scripts directly into
+a Job template. An embedded file lets you define the contents of a text file directly in a Job Template, then that text file
+will be created in the  [Session's temporary Working Directory](How-Jobs-Are-Run#sessions) when the Task is run.
 
 The result is the start of your Job Template, which we save to file called `job.template.yaml`:
 
@@ -318,6 +352,9 @@ steps:
           # Note: Task.File.Render refers to the file location on disk where the
           #  contents of the embedded file named "Render" are materialized.
           command: "{{Task.File.Render}}"
+          # Note that args is a list of strings. Each element of the list is a separate argument
+          # to the command. For example, if we needed to pass "--frame 12" to a command, then
+          # that would be two separate arguments ("--frame" and "12").
           args:
             - 3d/pavillon_barcelone_v1.2.blend
             - output_frames
@@ -334,6 +371,9 @@ steps:
             # Return an error code if any command in the script fails.
             set -eou pipefail
 
+            # Use Blender's scripting interface to reduce the scene resolution and sampling rate to speed up testing.
+            # See https://www.gnu.org/savannah-checkouts/gnu/bash/manual/bash.html#Here-Documents
+            # Remove this and the lines below, `  --python "$TMPFILE" \` and `rm -f $TMPFILE`, after testing is complete.
             TMPFILE=$(mktemp)
             cat > "$TMPFILE" << EOF
             import bpy
@@ -374,7 +414,8 @@ args:
   - "2"
 ```
 
-Before moving on, it's a good idea to check to the syntax of the file. Make sure to activate any Python virtual env as needed, then use the CLI's `check` command:
+Before moving on, it's a good idea to check to the syntax of the file. Make sure to activate any Python virtual env as needed,
+then use the CLI's `check` command:
 
 ```bash
 % openjd check job.template.yaml
@@ -393,21 +434,21 @@ Fri Jul  5 09:33:02 2024	==============================================
 Fri Jul  5 09:33:02 2024	----------------------------------------------
 Fri Jul  5 09:33:02 2024	Phase: Running action
 Fri Jul  5 09:33:02 2024	----------------------------------------------
-Fri Jul  5 09:33:02 2024	Running command /private/var/folders/93/p7mk60kn69ggyc87dfbwtht80000gr/T/OpenJD/sample_session0bd5l1au/tmphe6bjl3c.sh
+Fri Jul  5 09:33:02 2024	Running command /private/var/folders/93/p7mk/T/OpenJD/sample_session0bd5l1au/tmphe6bjl3c.sh
 Fri Jul  5 09:33:02 2024	Command started as pid: 85706
 Fri Jul  5 09:33:02 2024	Output:
 Fri Jul  5 09:33:03 2024	Blender 4.1.1 (hash e1743a0317bc built 2024-04-16 00:06:22)
-Fri Jul  5 09:33:03 2024	Error: Cannot read file "/private/var/folders/93/p7mk60kn69ggyc87dfbwtht80000gr/T/OpenJD/sample_session0bd5l1au/3d/pavillon_barcelone_v1.2.blend": No such file or directory
+Fri Jul  5 09:33:03 2024	Error: Cannot read file "/private/var/folders/93/p7mk/T/OpenJD/sample_session0bd5l1au/3d/pavillon_barcelone_v1.2.blend": No such file or directory
 Fri Jul  5 09:33:03 2024	
 Fri Jul  5 09:33:03 2024	Blender quit
 ...
 ```
 
-Uh-oh, there's an error! Blender couldn't find the input file. This is because all actions in a Session are always run with their
-current working directory being the Session's temporary working directory
-(`/private/var/folders/93/p7mk60kn69ggyc87dfbwtht80000gr/T/OpenJD/sample_session0bd5l1au` in this case), the scene file argument to your
-shell script was given as a relative path to the current working directory, and the scene file isn't in the Session's temporary
-working directory (it's actually in `/Users/myusername/blender_demo/3d/pavillon_barcelone_v1.2.blend` on this workstation).
+Uh-oh, there's an error! The error means that Blender couldn't find the input file. This is because all actions in a Session are always
+run with their current working directory being the Session's temporary working directory, which was 
+`/private/var/folders/93/p7mk/T/OpenJD/sample_session0bd5l1au` in this case. In our script, we've been using a relative path relative
+path to the current working directory, and the scene file isn't in the Session's temporary
+working directory; it's actually in `/Users/myusername/blender_demo/3d/pavillon_barcelone_v1.2.blend` on this workstation.
 So, let's fix that up by changing the arguments to the command that the Task runs (note that we'll also have the same issue with
 the `output_frames` directory, so we'll preemptively fix that as well):
 
@@ -525,6 +566,9 @@ steps:
             # Return an error code if any command in the script fails.
             set -eou pipefail
 
+            # Use Blender's scripting interface to reduce the scene resolution and sampling rate to speed up testing.
+            # See https://www.gnu.org/savannah-checkouts/gnu/bash/manual/bash.html#Here-Documents
+            # Remove this and the lines below, `  --python "$TMPFILE" \` and `rm -f $TMPFILE`, after testing is complete.
             TMPFILE=$(mktemp)
             cat > "$TMPFILE" << EOF
             import bpy
@@ -597,7 +641,8 @@ like the scene file, frame range, and output locations when using the template t
 
 In the spirit of small incremental improvements, let's start by turning the scene file into a parameter. This is a filename, so
 it will be a [`PATH` type job parameter](2023-09-Template-Schemas#22-jobpathparameterdefinition). Modify the template to include
-the parameter definition:
+the parameter definition and [reference it using the name](https://github.com/OpenJobDescription/openjd-specifications/wiki/How-Jobs-Are-Constructed#value-references)
+`Param.SceneFile` since it is a Job Parameter:
 
 ```yaml
 specificationVersion: jobtemplate-2023-09
@@ -608,34 +653,6 @@ parameterDefinitions:
     dataFlow: IN
     objectType: FILE
 steps:
-...
-```
-
-Then make sure that the syntax is correct:
-
-```bash
-% openjd check job.template.yaml
-Template at 'job.template.yaml' passes validation checks.
-```
-
-Next, if you run the updated template and provide a value for this parameter then the behavior of the Job will not change because we
-are still hard-coding the location of the scene file within the template.
-
-```bash
-% openjd run --step BlenderRender job.template.yaml -p SceneFile=/does/not/exist
-...
-Session ended successfully
-
-Job: DemoJob
-Step: BlenderRender
-Duration: 16.862898375 seconds
-Tasks run: 1
-```
-
-So, further update the template to reference the job parameter named `SceneFile` instead of using the hard-coded scene:
-
-```yaml
-...
   - name: BlenderRender
     script:
       actions:
@@ -643,9 +660,6 @@ So, further update the template to reference the job parameter named `SceneFile`
           command: "{{Task.File.Render}}"
           args:
             - "{{Param.SceneFile}}"
-            - /Users/myusername/blender_demo/output_frames
-            - "1"
-            - "2"
 ...
 ```
 
@@ -655,26 +669,6 @@ Then check the syntax and run it:
 % openjd check job.template.yaml
 Template at 'job.template.yaml' passes validation checks.
 
-# Test the failing case to make sure that our change took effect
-% openjd run --step BlenderRender job.template.yaml -p SceneFile=/does/not/exist
-...
-Fri Jul  5 14:18:11 2024	----------------------------------------------
-Fri Jul  5 14:18:11 2024	Phase: Running action
-Fri Jul  5 14:18:11 2024	----------------------------------------------
-Fri Jul  5 14:18:11 2024	Running command /private/var/folders/93/p7mk60kn69ggyc87dfbwtht80000gr/T/OpenJD/sample_sessionvg8p3pkk/tmpend9rf4c.sh
-Fri Jul  5 14:18:11 2024	Command started as pid: 24863
-Fri Jul  5 14:18:11 2024	Output:
-Fri Jul  5 14:18:12 2024	Blender 4.1.1 (hash e1743a0317bc built 2024-04-16 00:06:22)
-Fri Jul  5 14:18:12 2024	Error: Cannot read file "/does/not/exist": No such file or directory
-...
-Session ended with errors; see Task logs for details
-
-Job: DemoJob
-Step: BlenderRender
-Duration: 0.647131209 seconds
-Tasks run: 0
-
-# And now the passing case
 % openjd run --step BlenderRender job.template.yaml -p SceneFile=$(pwd)/3d/pavillon_barcelone_v1.2.blend
 ...
 Session ended successfully
@@ -744,6 +738,9 @@ steps:
             # Return an error code if any command in the script fails.
             set -eou pipefail
 
+            # Use Blender's scripting interface to reduce the scene resolution and sampling rate to speed up testing.
+            # See https://www.gnu.org/savannah-checkouts/gnu/bash/manual/bash.html#Here-Documents
+            # Remove this and the lines below, `  --python "$TMPFILE" \` and `rm -f $TMPFILE`, after testing is complete.
             TMPFILE=$(mktemp)
             cat > "$TMPFILE" << EOF
             import bpy
@@ -820,6 +817,8 @@ Duration: 18.346753125 seconds
 Tasks run: 1
 ```
 
+Note that we are still running at low resolution for testing, so this run completes very quickly.
+
 ### 2.2.3. Path Mapping
 
 You know the location of files on your workstation when submitting a Job to the orchestrater for your compute cluster,
@@ -835,14 +834,27 @@ The template that you've written so far is already set up to make use of the pat
 rather than STRING types for parameters that are files and directories. The PATH type parameters will automatically have any path mapping
 rules applied to them when resolving the value in a template.
 
-You can use the CLI to test the path mapping of this job template as follows. We, ultimately, want our job to use the files in our
-current directory when running, but pretend that you're submitting from a different workstation where the files are located
-in the `/mnt/shared/demo` directory. First, create an environment variable that contains the path mapping rules
-[according to the specification](How-Jobs-Are-Run#path-mapping) as though you are submitting from that fictional workstation and
-that the Job will be run on your workstation:
+For the example, you ultimately want the job to use the files in the current directory when running. To demonstrate path mapping,
+let's retend that you're submitting from a different workstation where the files are located in the `/mnt/shared/demo` directory. 
+You'll run the job with parameter values that say that the files are located in `/mnt/shared/demo` and create a path mapping rule that
+tells Open Job Description to remap `/mnt/shared/demo` to the current working directory.
+
+The format that Open Job Description expects for path mapping rules is described in [the specification](How-Jobs-Are-Run#path-mapping).
+To make it easy to reference in your `openjd run` commmand, create an environment variable that defines the path mapping rule that you
+need:
 
 ```bash
-PATH_MAPPING_RULES="{\"version\":\"pathmapping-1.0\", \"path_mapping_rules\": [{\"source_path_format\": \"POSIX\", \"source_path\": \"/mnt/shared/demo\", \"destination_path\": \"$(pwd)\"}]}"
+PATH_MAPPING_RULES=\
+"{
+  \"version\": \"pathmapping-1.0\",
+  \"path_mapping_rules\": [
+    {
+      \"source_path_format\": \"POSIX\",
+      \"source_path\": \"/mnt/shared/demo\",
+      \"destination_path\": \"$(pwd)\"
+    }
+  ]
+}"
 ```
 
 Then, run the job using the CLI as though we were submitting from the workstation that has its files in `/mnt/shared/demo`:
@@ -858,7 +870,7 @@ Then, run the job using the CLI as though we were submitting from the workstatio
 Fri Jul  5 17:09:47 2024	----------------------------------------------
 Fri Jul  5 17:09:47 2024	Phase: Running action
 Fri Jul  5 17:09:47 2024	----------------------------------------------
-Fri Jul  5 17:09:47 2024	Running command /private/var/folders/93/p7mk60kn69ggyc87dfbwtht80000gr/T/OpenJD/sample_sessionbr6836aq/tmp3x4fnush.sh
+Fri Jul  5 17:09:47 2024	Running command /private/var/folders/93/p7mk/T/OpenJD/sample_sessionbr6836aq/tmp3x4fnush.sh
 Fri Jul  5 17:09:47 2024	Command started as pid: 41372
 Fri Jul  5 17:09:47 2024	Output:
 Fri Jul  5 17:09:48 2024	Blender 4.1.1 (hash e1743a0317bc built 2024-04-16 00:06:22)
@@ -868,18 +880,22 @@ Fri Jul  5 17:09:48 2024	Read blend: "/Users/myusername/blender_demo/3d/pavillon
 ```
 
 This works because the `pavillon_barcelone_v1.2.blend` file references the files that it needs (the textures beside it in the directory)
-with relative path references. If, on the other hand, `pavillon_barcelone_v1.2.blend` referenced files with absolute paths then this would
-not work as-is because Blender does not know where the texture files that it needs have been relocated to on the compute host. You can
-demonstrate this by opening the scene in Blender, changing the external references to absolute 
-(`File -> External Data -> Make paths absolute`), saving, and then moving the scene file and textures to a different directory and
-re-running the job. You'll notice that the resulting images are all pink due to missing textures.
-
-To support this case, Open Job Description makes the path mapping rules that are being applied available to a Job in the Session's
-temporary working directory while it's running. To see these, you can run the
-[`path-mapping.yaml` sample Job Template](https://github.com/OpenJobDescription/openjd-specifications/tree/mainline/samples):
+with relative path references. If your job's files contain absolute file references, then Open Job Description makes the path mapping rules
+that are being applied available to a Job in the Session's temporary working directory while it's running for your job to use.
+To see these, you can run the [`path-mapping.yaml` sample Job Template](https://github.com/OpenJobDescription/openjd-specifications/tree/mainline/samples):
 
 ```bash
-% PATH_MAPPING_RULES="{\"version\":\"pathmapping-1.0\", \"path_mapping_rules\": [{\"source_path_format\": \"POSIX\", \"source_path\": \"/mnt/source_directory\", \"destination_path\": \"/mnt/destination_directory\"}]}"
+% PATH_MAPPING_RULES=\
+"{
+  \"version\": \"pathmapping-1.0\",
+  \"path_mapping_rules\": [
+    {
+      \"source_path_format\": \"POSIX\",
+      \"source_path\": \"/mnt/source_directory\",
+      \"destination_path\": \"/mnt/destination_directory\"
+    }
+  ]
+}"
 % openjd run --step PrintRules path-mapping.yaml --path-mapping-rules "$PATH_MAPPING_RULES"
 Mon Jul  8 15:02:42 2024	
 Mon Jul  8 15:02:42 2024	==============================================
@@ -926,6 +942,9 @@ a single frame at a time looks like:
 # Return an error code if any command in the script fails.
 set -eou pipefail
 
+# Use Blender's scripting interface to reduce the scene resolution and sampling rate to speed up testing.
+# See https://www.gnu.org/savannah-checkouts/gnu/bash/manual/bash.html#Here-Documents
+# Remove this and the lines below, `  --python "$TMPFILE" \` and `rm -f $TMPFILE`, after testing is complete.
 TMPFILE=$(mktemp)
 cat > "$TMPFILE" << EOF
 import bpy
@@ -1001,7 +1020,8 @@ Mon Jul  8 10:08:24 2024	Frame(INT) = 100
 ...
 ```
 
-When you run the CLI without the `-tp` argument, then you'll see all of the individual Tasks in the Step being run independently:
+If you were to run the CLI without the `-tp` argument, then it would have rendered all 380 frames of the animation. 
+To demonstrate, run the CLI without `-tp` but set the value of `FrameEnd` to 3 instead of 380:
 
 ```bash
 % openjd run --step BlenderRender job.template.yaml \
@@ -1086,6 +1106,9 @@ steps:
             # Return an error code if any command in the script fails.
             set -eou pipefail
 
+            # Use Blender's scripting interface to reduce the scene resolution and sampling rate to speed up testing.
+            # See https://www.gnu.org/savannah-checkouts/gnu/bash/manual/bash.html#Here-Documents
+            # Remove this and the lines below, `  --python "$TMPFILE" \` and `rm -f $TMPFILE`, after testing is complete.
             TMPFILE=$(mktemp)
             cat > "$TMPFILE" << EOF
             import bpy
@@ -1196,13 +1219,22 @@ Using the association operator, define the Step's parameter space as:
 ...
 ```
 
-Then introduce a new Job Parameter for the number of frames per Task, convert the parameter space definition to use our template's
-JobParameters, and modify the arguments of the `BlenderRender` Step's command to pass the frame range expression for the Task
-to the `render.sh` script:
+Aside: The value for the `range` property are using
+[Open Job Description's syntax](https://github.com/OpenJobDescription/openjd-specifications/wiki/2023-09-Template-Schemas#34111-intrangeexpr)
+for integer range expressions. The value "1-380:11" means to take every 11th value starting at 1 and going no higher than 380; so, the values
+`1, 12, 23, ..., 374`. The value value "11-380:11,380" is similar, but adds the value 380 to the end of the list of value to end up with
+`11, 22, 33, ..., 373, 380`. 
+
+Then introduce a new Job Parameter for the number of frames per Task and one less than `FrameEnd`, to work around a current limitation of
+the implementation. Also, convert the parameter space definition to use the template's Job Parameters, and modify the arguments of
+the `BlenderRender` Step's command to pass the frame range expression for the Task to the `render.sh` script:
 
 ```yaml
 parameterDefinitions:
 ...
+  - name: FrameEndMinusOne
+    description: "Must be one less than the FrameEnd value"
+    type: INT
   - name: FramesPerTask
     description: "Number of frames to render in each task. Note: The math breaks if FrameEnd is an integer multiple of FramesPerTask."
     type: INT
@@ -1217,7 +1249,7 @@ steps:
           range: "{{Param.FrameStart}}-{{Param.FrameEnd}}:{{Param.FramesPerTask}}"
         - name: RangeEnd
           type: INT
-          range: "{{Param.FramesPerTask}}-{{Param.FrameEnd}}:{{Param.FramesPerTask}},{{Param.FrameEnd}}"
+          range: "{{Param.FramesPerTask}}-{{Param.FrameEndMinusOne}}:{{Param.FramesPerTask}},{{Param.FrameEnd}}"
       combination: "(RangeStart,RangeEnd)"
     script:
       actions:
@@ -1240,7 +1272,8 @@ Template at 'job.template.yaml' passes validation checks.
   -p SceneFile=$(pwd)/3d/pavillon_barcelone_v1.2.blend \
   -p FramesDirectory=$(pwd)/output_frames \
   -p AnimationFile=$(pwd)/animation.mp4 \
-  -p FrameStart=1 -p FrameEnd=380 -p FramesPerTask=11 \
+  -p FrameStart=1 -p FrameEnd=380 -p FrameEndMinusOne=379 \
+  -p FramesPerTask=11 \
   --tasks '[{"RangeStart": 1, "RangeEnd": 11}]'
 Mon Jul  8 12:23:56 2024	
 Mon Jul  8 12:23:56 2024	==============================================
@@ -1278,6 +1311,9 @@ parameterDefinitions:
     type: INT
     minValue: 1
     default: 2
+  - name: FrameEndMinusOne
+    description: "Must be one less than the FrameEnd value"
+    type: INT
   - name: FramesPerTask
     description: "Number of frames to render in each task. Note: The math breaks if FrameEnd is an integer multiple of FramesPerTask."
     type: INT
@@ -1295,7 +1331,7 @@ steps:
           range: "{{Param.FrameStart}}-{{Param.FrameEnd}}:{{Param.FramesPerTask}}"
         - name: RangeEnd
           type: INT
-          range: "{{Param.FramesPerTask}}-{{Param.FrameEnd}}:{{Param.FramesPerTask}},{{Param.FrameEnd}}"
+          range: "{{Param.FramesPerTask}}-{{Param.FrameEndMinusOne}}:{{Param.FramesPerTask}},{{Param.FrameEnd}}"
       combination: "(RangeStart,RangeEnd)"
     script:
       actions:
@@ -1317,6 +1353,9 @@ steps:
             # Return an error code if any command in the script fails.
             set -eou pipefail
 
+            # Use Blender's scripting interface to reduce the scene resolution and sampling rate to speed up testing.
+            # See https://www.gnu.org/savannah-checkouts/gnu/bash/manual/bash.html#Here-Documents
+            # Remove this and the lines below, `  --python "$TMPFILE" \` and `rm -f $TMPFILE`, after testing is complete.
             TMPFILE=$(mktemp)
             cat > "$TMPFILE" << EOF
             import bpy
@@ -1392,22 +1431,9 @@ parameterSpace:
 ...
 ```
 
-Also remove the definitions of the `FrameStart` and `FrameEnd` Job Parameters from the template because they are no longer used,
-and adjust the arguments of the `EncodeVideo` command to remove the reference to the `FrameStart` job parameter:
-
-```yaml
-...
-      actions:
-        onRun:
-          command: "{{Task.File.Encode}}"
-          args:
-            - "{{Param.FramesDirectory}}"
-            - "{{Param.AnimationFile}}"
-            - "1"
-...
-```
-
-Finally, increase the timeout for the render command to be large enough to complete all of the frame renders for the task.
+Also remove the definitions of the `FrameStart` and `FrameEnd` Job Parameters from the template because they are no longer used;
+adjust the arguments of the `EncodeVideo` command to remove the reference to the `FrameStart` job parameter; and increase
+the timeout for the render command to be large enough to complete all of the frame renders for the task.
 The resulting template is otherwise identical to the template that you created in [One Frame Per Task](#one-frame-per-task):
 
 ```yaml
@@ -1467,6 +1493,9 @@ steps:
             # Return an error code if any command in the script fails.
             set -eou pipefail
 
+            # Use Blender's scripting interface to reduce the scene resolution and sampling rate to speed up testing.
+            # See https://www.gnu.org/savannah-checkouts/gnu/bash/manual/bash.html#Here-Documents
+            # Remove this and the lines below, `  --python "$TMPFILE" \` and `rm -f $TMPFILE`, after testing is complete.
             TMPFILE=$(mktemp)
             cat > "$TMPFILE" << EOF
             import bpy
@@ -1544,7 +1573,12 @@ Mon Jul  8 10:48:30 2024	Frames(STRING) = 1..40
 ### 2.3. Ready for Production
 
 To develop the Job Template for this guide you've been reducing the resolution and quality of the resulting frames to make the
-development iterations quicker. To use the template in production you'd either need to remove the testing code from the `render.sh`
+development iterations quicker. To use the template in production you'll need to remove that testing code. You may also want to
+control which compute nodes in your cluster the Steps of the Job run on. We'll go over both in this section.
+
+#### 2.3.1. Conditional Testing Using Environments
+
+To use the template in production you'd either need to remove the testing code from the `render.sh`
 embedded file so that it becomes:
 
 ```bash
@@ -1569,8 +1603,8 @@ can run [before any Task has run, and after all Tasks have completed](How-Jobs-A
 Since they're just arbitrary commands of your choosing they can do anything that you would like, but one of their use cases is to
 set up or modify the environment where your Tasks will be running.
 
-For this case, modify the `render.sh` embedded file
-so that the testing code is only run if the environment variable `TESTING_TEMPLATE` has the value `true`:
+For this case, modify the `render.sh` embedded file so that the testing code is only run if the environment variable
+`TESTING_TEMPLATE` has the value `true`:
 
 ```bash
 #!/bin/bash
@@ -1578,6 +1612,8 @@ so that the testing code is only run if the environment variable `TESTING_TEMPLA
 # Return an error code if any command in the script fails.
 set -eou pipefail
 
+# Use Blender's scripting interface to reduce the scene resolution and sampling rate to speed up testing.
+# See https://www.gnu.org/savannah-checkouts/gnu/bash/manual/bash.html#Here-Documents
 TMPFILE=$(mktemp)
 if test "${TESTING_TEMPLATE:-false}" == "true"; then
     cat > "$TMPFILE" << EOF
@@ -1602,15 +1638,23 @@ blender --background "$SCENE" \
 rm -f $TMPFILE
 ```
 
-Then you can add a Step Environment to the `BlenderRender` Step that sets that environment variable to `true`:
+Then you can add a Step Environment to the `BlenderRender` Step that sets that environment variable to `true` or `false`
+based on the value of a `TestingMode` Job Parameter:
 
 ```yaml
+...
+parameterDefinitions:
+...
+  - name: TestingMode
+    type: STRING
+    allowedValues: ["true", "false"]
+    default: "false"
 ...
   - name: BlenderRender
     stepEnvironments:
       - name: ToggleTesting
         variables:
-          TESTING_TEMPLATE: "true"
+          TESTING_TEMPLATE: "{{Param.TestingMode}}"
       # - name: ToggleTesting
       #   description: "An alternative form that uses the openjd_env stdout message"
       #   script:
@@ -1624,7 +1668,7 @@ Then you can add a Step Environment to the `BlenderRender` Step that sets that e
       #         filename: set_testing_env.sh
       #         data: |
       #           #!/bin/bash
-      #           echo "openjd_env: TESTING_TEMPLATE=true"
+      #           echo "openjd_env: TESTING_TEMPLATE={{Param.TestingMode}}"
 ...
 ```
 
@@ -1647,36 +1691,39 @@ Mon Jul  8 14:23:44 2024	RangeEnd(INT) = 11
 ...
 ```
 
-Finally, you can control whether to run the Job in testing or production mode by adding a Job Parameter and referencing it:
+#### 2.3.2. Adding Host Requirements
+
+The definition of each Step in a Job Template can include a
+[`hostRequirements` property](https://github.com/OpenJobDescription/openjd-specifications/wiki/2023-09-Template-Schemas#33-hostrequirements)
+that constrains your compute orchestrator to only run the Step's Tasks on certain hardware. For instance, you can say that the Tasks must
+run on a Linux host, requires at least 16 GiB of memory, and requires at least 8 CPU cores.
+
+Add host requirements to the `BlenderRender` Step to constrain which hosts in your compute cluster can run its Tasks:
 
 ```yaml
 ...
-parameterDefinitions:
+steps:
+  - name: BlenderRender
 ...
-  - name: TestingMode
-    type: STRING
-    allowedValues: ["true", "false"]
-    default: "false"
+    hostRequirements:
+      amounts:
+      - name: amount.worker.vcpu
+        min: 4
+      - name: amount.worker.memory
+        min: 4096 # MiB. = 4 GiB
+      attributes:
+      - name: attr.worker.os.family
+        anyOf: [ "linux" ]
+      - name: attr.worker.cpu.arch
+        anyOf: [ "x86_64" ]
+    script:
 ...
-    stepEnvironments:
-      - name: ToggleTesting
-        variables:
-          TESTING_TEMPLATE: "{{Param.TestingMode}}"
-      # - name: ToggleTesting
-      #   description: "An alternative form that uses the openjd_env stdout message"
-      #   script:
-      #     actions:
-      #       onEnter:
-      #         command: "{{Env.File.SetEnv}}"
-      #     embeddedFiles:
-      #       - name: SetEnv
-      #         type: TEXT
-      #         runnable: true
-      #         filename: set_testing_env.sh
-      #         data: |
-      #           #!/bin/bash
-      #           echo "openjd_env: TESTING_TEMPLATE={{Param.TestingMode}}"
 ```
+ 
+ The Open Job Description CLI does not currently support enforcing the constraints defined by host requirements, so you can
+ validate the template syntax using the CLI but you will have to test the constraints on your compute cluster.
+
+#### 2.3.3. The Final Result
 
 The completed template now looks like:
 
@@ -1704,6 +1751,9 @@ parameterDefinitions:
     type: INT
     minValue: 1
     default: 2
+  - name: FrameEndMinusOne
+    description: "Must be one less than the FrameEnd value"
+    type: INT
   - name: FramesPerTask
     description: "Number of frames to render in each task. Note: The math breaks if FrameEnd is an integer multiple of FramesPerTask."
     type: INT
@@ -1722,6 +1772,20 @@ steps:
       - name: ToggleTesting
         variables:
           TESTING_TEMPLATE: "{{Param.TestingMode}}"
+      # - name: ToggleTesting
+      #   description: "An alternative form that uses the openjd_env stdout message"
+      #   script:
+      #     actions:
+      #       onEnter:
+      #         command: "{{Env.File.SetEnv}}"
+      #     embeddedFiles:
+      #       - name: SetEnv
+      #         type: TEXT
+      #         runnable: true
+      #         filename: set_testing_env.sh
+      #         data: |
+      #           #!/bin/bash
+      #           echo "openjd_env: TESTING_TEMPLATE={{Param.TestingMode}}"
     parameterSpace:
       taskParameterDefinitions:
         - name: RangeStart
@@ -1729,8 +1793,19 @@ steps:
           range: "{{Param.FrameStart}}-{{Param.FrameEnd}}:{{Param.FramesPerTask}}"
         - name: RangeEnd
           type: INT
-          range: "{{Param.FramesPerTask}}-{{Param.FrameEnd}}:{{Param.FramesPerTask}},{{Param.FrameEnd}}"
+          range: "{{Param.FramesPerTask}}-{{Param.FrameEndMinusOne}}:{{Param.FramesPerTask}},{{Param.FrameEnd}}"
       combination: "(RangeStart,RangeEnd)"
+    hostRequirements:
+      amounts:
+      - name: amount.worker.vcpu
+        min: 4
+      - name: amount.worker.memory
+        min: 4096 # MiB. = 4 GiB
+      attributes:
+      - name: attr.worker.os.family
+        anyOf: [ "linux" ]
+      - name: attr.worker.cpu.arch
+        anyOf: [ "x86_64" ]
     script:
       actions:
         onRun:
@@ -1751,6 +1826,8 @@ steps:
             # Return an error code if any command in the script fails.
             set -eou pipefail
 
+            # Use Blender's scripting interface to reduce the scene resolution and sampling rate to speed up testing.
+            # See https://www.gnu.org/savannah-checkouts/gnu/bash/manual/bash.html#Here-Documents
             TMPFILE=$(mktemp)
             if test "${TESTING_TEMPLATE:-false}" == "true"; then
                 cat > "$TMPFILE" << EOF
@@ -1805,7 +1882,6 @@ steps:
                 -frames:v 300 -c:v libx264 -preset fast \
                 -color_range tv -colorspace bt709 -color_primaries bt709 -color_trc iec61966-2-1 \
                 -movflags faststart "$OUTPUT_FILENAME"
-
 ```
 
 ## 3. Next Steps
